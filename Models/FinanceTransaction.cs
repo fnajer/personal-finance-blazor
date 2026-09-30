@@ -11,7 +11,12 @@ public class FinanceTransaction
     [StringLength(120, ErrorMessage = "Описание должно содержать не более 120 символов.")]
     public string Description { get; set; } = string.Empty;
 
-    [Range(typeof(decimal), "0.01", "999999999", ErrorMessage = "Сумма должна быть больше нуля.")]
+    [Range(
+        typeof(decimal),
+        "0.01",
+        "999999999",
+        ParseLimitsInInvariantCulture = true,
+        ErrorMessage = "Сумма должна быть больше нуля.")]
     [Column(TypeName = "decimal(18,2)")]
     public decimal Amount { get; set; }
 
