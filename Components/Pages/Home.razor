@@ -1,6 +1,8 @@
 @page "/"
 @rendermode InteractiveServer
+@attribute [Authorize]
 @inject IDbContextFactory<FinanceDbContext> DbFactory
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Обзор — Мои финансы</PageTitle>
 
@@ -119,6 +121,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        var userId = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetRequiredUserId();
         await using var db = await DbFactory.CreateDbContextAsync();
         var monthStart = new DateOnly(DateTime.Today.Year, DateTime.Today.Month, 1);
         var nextMonth = monthStart.AddMonths(1);
@@ -126,7 +129,7 @@ else
         var monthTransactions = await db.Transactions
             .AsNoTracking()
             .Include(x => x.Category)
-            .Where(x => x.Date >= monthStart && x.Date < nextMonth)
+            .Where(x => x.UserId == userId && x.Date >= monthStart && x.Date < nextMonth)
             .ToListAsync();
 
         income = monthTransactions
@@ -149,6 +152,7 @@ else
         recentTransactions = await db.Transactions
             .AsNoTracking()
             .Include(x => x.Category)
+            .Where(x => x.UserId == userId)
             .OrderByDescending(x => x.Date)
             .ThenByDescending(x => x.Id)
             .Take(5)

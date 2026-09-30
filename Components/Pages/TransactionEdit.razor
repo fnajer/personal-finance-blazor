@@ -1,8 +1,10 @@
 @page "/transactions/new"
 @page "/transactions/edit/{Id:int}"
 @rendermode InteractiveServer
+@attribute [Authorize]
 @inject IDbContextFactory<FinanceDbContext> DbFactory
 @inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>@(Id.HasValue ? "Редактирование" : "Новая операция") — Мои финансы</PageTitle>
 
@@ -28,6 +30,10 @@ else if (notFound)
 else
 {
     <section class="panel form-panel">
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert error form-alert">@error</div>
+        }
         <EditForm Model="model" OnValidSubmit="SaveAsync" FormName="transaction-form">
             <DataAnnotationsValidator />
             <ValidationSummary />
@@ -96,20 +102,25 @@ else
     private bool isLoading = true;
     private bool isSaving;
     private bool notFound;
+    private string? error;
 
     private IEnumerable<Category> VisibleCategories => categories.Where(x => x.Type == selectedType);
 
     protected override async Task OnParametersSetAsync()
     {
+        var userId = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetRequiredUserId();
         await using var db = await DbFactory.CreateDbContextAsync();
-        categories = await db.Categories.AsNoTracking().OrderBy(x => x.Name).ToListAsync();
+        categories = await db.Categories.AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .OrderBy(x => x.Name)
+            .ToListAsync();
 
         if (Id.HasValue)
         {
             var transaction = await db.Transactions
                 .AsNoTracking()
                 .Include(x => x.Category)
-                .SingleOrDefaultAsync(x => x.Id == Id.Value);
+                .SingleOrDefaultAsync(x => x.Id == Id.Value && x.UserId == userId);
 
             if (transaction is null)
             {
@@ -153,14 +164,39 @@ else
     private async Task SaveAsync()
     {
         isSaving = true;
+        error = null;
+        var userId = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetRequiredUserId();
         await using var db = await DbFactory.CreateDbContextAsync();
+
+        var categoryBelongsToUser = await db.Categories.AnyAsync(x =>
+            x.Id == model.CategoryId && x.UserId == userId && x.Type == selectedType);
+        if (!categoryBelongsToUser)
+        {
+            error = "Выберите доступную категорию нужного типа.";
+            isSaving = false;
+            return;
+        }
 
         if (Id.HasValue)
         {
-            db.Transactions.Update(model);
+            var transaction = await db.Transactions.SingleOrDefaultAsync(x =>
+                x.Id == Id.Value && x.UserId == userId);
+            if (transaction is null)
+            {
+                notFound = true;
+                isSaving = false;
+                return;
+            }
+
+            transaction.Description = model.Description;
+            transaction.Amount = model.Amount;
+            transaction.Date = model.Date;
+            transaction.Note = model.Note;
+            transaction.CategoryId = model.CategoryId;
         }
         else
         {
+            model.UserId = userId;
             db.Transactions.Add(model);
         }
 

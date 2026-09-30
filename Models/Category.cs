@@ -16,5 +16,7 @@ public class Category
 
     public TransactionType Type { get; set; }
 
+    public string? UserId { get; set; }
+
     public List<FinanceTransaction> Transactions { get; set; } = [];
 }

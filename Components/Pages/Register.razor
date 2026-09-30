@@ -1,0 +1,40 @@
+@page "/account/register"
+@layout AccountLayout
+
+<PageTitle>Регистрация — Мои финансы</PageTitle>
+
+<section class="account-card">
+    <p class="eyebrow">Новый аккаунт</p>
+    <h1>Регистрация</h1>
+    <p class="subtitle">После регистрации мы создадим ваш личный набор категорий.</p>
+
+    @if (!string.IsNullOrWhiteSpace(Error))
+    {
+        <div class="alert error account-alert">@Error</div>
+    }
+
+    <form class="stacked-form account-form" method="post" action="/account/actions/register">
+        <AntiforgeryToken />
+        <label>
+            <span>Email</span>
+            <input type="email" name="email" value="@Email" autocomplete="email" required autofocus />
+        </label>
+        <label>
+            <span>Пароль</span>
+            <input type="password" name="password" autocomplete="new-password" minlength="8" required />
+            <small class="field-hint">Не менее 8 символов, с заглавной и строчной буквой и цифрой.</small>
+        </label>
+        <label>
+            <span>Повторите пароль</span>
+            <input type="password" name="passwordConfirmation" autocomplete="new-password" minlength="8" required />
+        </label>
+        <button class="button primary" type="submit">Создать аккаунт</button>
+    </form>
+
+    <p class="account-switch">Уже есть аккаунт? <a href="/account/login">Войти</a></p>
+</section>
+
+@code {
+    [SupplyParameterFromQuery(Name = "email")] public string? Email { get; set; }
+    [SupplyParameterFromQuery(Name = "error")] public string? Error { get; set; }
+}

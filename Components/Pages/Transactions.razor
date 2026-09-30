@@ -1,6 +1,8 @@
 @page "/transactions"
 @rendermode InteractiveServer
+@attribute [Authorize]
 @inject IDbContextFactory<FinanceDbContext> DbFactory
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Операции — Мои финансы</PageTitle>
 
@@ -131,6 +133,7 @@
     {
         isLoading = true;
         message = null;
+        var userId = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetRequiredUserId();
         await using var db = await DbFactory.CreateDbContextAsync();
         var from = DateOnly.FromDateTime(fromDate);
         var to = DateOnly.FromDateTime(toDate);
@@ -138,7 +141,7 @@
         var query = db.Transactions
             .AsNoTracking()
             .Include(x => x.Category)
-            .Where(x => x.Date >= from && x.Date <= to);
+            .Where(x => x.UserId == userId && x.Date >= from && x.Date <= to);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -169,8 +172,11 @@
 
     private async Task DeleteAsync(FinanceTransaction transaction)
     {
+        var userId = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetRequiredUserId();
         await using var db = await DbFactory.CreateDbContextAsync();
-        await db.Transactions.Where(x => x.Id == transaction.Id).ExecuteDeleteAsync();
+        await db.Transactions
+            .Where(x => x.Id == transaction.Id && x.UserId == userId)
+            .ExecuteDeleteAsync();
         await LoadAsync();
         message = $"Операция «{transaction.Description}» удалена.";
     }

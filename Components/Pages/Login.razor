@@ -1,0 +1,41 @@
+@page "/account/login"
+@layout AccountLayout
+
+<PageTitle>Вход — Мои финансы</PageTitle>
+
+<section class="account-card">
+    <p class="eyebrow">С возвращением</p>
+    <h1>Вход в аккаунт</h1>
+    <p class="subtitle">Ваши операции и категории доступны только вам.</p>
+
+    @if (!string.IsNullOrWhiteSpace(Error))
+    {
+        <div class="alert error account-alert">@Error</div>
+    }
+
+    <form class="stacked-form account-form" method="post" action="/account/actions/login">
+        <AntiforgeryToken />
+        <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+        <label>
+            <span>Email</span>
+            <input type="email" name="email" value="@Email" autocomplete="email" required autofocus />
+        </label>
+        <label>
+            <span>Пароль</span>
+            <input type="password" name="password" autocomplete="current-password" required />
+        </label>
+        <label class="checkbox-label">
+            <input type="checkbox" name="rememberMe" value="true" />
+            <span>Оставаться в системе</span>
+        </label>
+        <button class="button primary" type="submit">Войти</button>
+    </form>
+
+    <p class="account-switch">Нет аккаунта? <a href="/account/register">Зарегистрироваться</a></p>
+</section>
+
+@code {
+    [SupplyParameterFromQuery(Name = "email")] public string? Email { get; set; }
+    [SupplyParameterFromQuery(Name = "returnUrl")] public string? ReturnUrl { get; set; }
+    [SupplyParameterFromQuery(Name = "error")] public string? Error { get; set; }
+}

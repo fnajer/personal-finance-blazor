@@ -1,6 +1,8 @@
 @page "/categories"
 @rendermode InteractiveServer
+@attribute [Authorize]
 @inject IDbContextFactory<FinanceDbContext> DbFactory
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Категории — Мои финансы</PageTitle>
 
@@ -94,11 +96,14 @@
 
     private async Task LoadAsync()
     {
+        var userId = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetRequiredUserId();
         await using var db = await DbFactory.CreateDbContextAsync();
         categories = await db.Categories.AsNoTracking()
+            .Where(x => x.UserId == userId)
             .OrderBy(x => x.Name)
             .ToListAsync();
         usageCounts = await db.Transactions.AsNoTracking()
+            .Where(x => x.UserId == userId)
             .GroupBy(x => x.CategoryId)
             .ToDictionaryAsync(x => x.Key, x => x.Count());
     }
@@ -157,10 +162,11 @@
     private async Task SaveAsync()
     {
         error = null;
+        var userId = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetRequiredUserId();
         await using var db = await DbFactory.CreateDbContextAsync();
         var normalizedName = model.Name.Trim();
         var duplicate = await db.Categories.AnyAsync(x =>
-            x.Id != model.Id && x.Name == normalizedName && x.Type == model.Type);
+            x.UserId == userId && x.Id != model.Id && x.Name == normalizedName && x.Type == model.Type);
 
         if (duplicate)
         {
@@ -171,11 +177,22 @@
         model.Name = normalizedName;
         if (model.Id == 0)
         {
+            model.UserId = userId;
             db.Categories.Add(model);
         }
         else
         {
-            db.Categories.Update(model);
+            var category = await db.Categories.SingleOrDefaultAsync(x =>
+                x.Id == model.Id && x.UserId == userId);
+            if (category is null)
+            {
+                error = "Категория не найдена.";
+                return;
+            }
+
+            category.Name = model.Name;
+            category.Color = model.Color;
+            category.Type = model.Type;
         }
 
         await db.SaveChangesAsync();
@@ -191,8 +208,11 @@
             return;
         }
 
+        var userId = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetRequiredUserId();
         await using var db = await DbFactory.CreateDbContextAsync();
-        await db.Categories.Where(x => x.Id == category.Id).ExecuteDeleteAsync();
+        await db.Categories
+            .Where(x => x.Id == category.Id && x.UserId == userId)
+            .ExecuteDeleteAsync();
         if (model.Id == category.Id)
         {
             ResetForm();

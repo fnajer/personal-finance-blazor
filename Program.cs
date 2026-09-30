@@ -1,5 +1,7 @@
 using FinanceTracker.Components;
 using FinanceTracker.Data;
+using FinanceTracker.Models;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 
@@ -17,7 +19,36 @@ builder.Services
     .AddInteractiveServerComponents();
 
 builder.Services.AddDbContextFactory<FinanceDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("FinanceDatabase")));
+    options.UseSqlite(builder.Configuration.GetConnectionString("FinanceDatabase")),
+    ServiceLifetime.Scoped);
+
+builder.Services
+    .AddAuthentication(options =>
+    {
+        options.DefaultScheme = IdentityConstants.ApplicationScheme;
+        options.DefaultSignInScheme = IdentityConstants.ExternalScheme;
+    })
+    .AddIdentityCookies();
+
+builder.Services.AddAuthorization();
+builder.Services.AddCascadingAuthenticationState();
+builder.Services
+    .AddIdentityCore<ApplicationUser>(options =>
+    {
+        options.User.RequireUniqueEmail = true;
+        options.Password.RequiredLength = 8;
+        options.Password.RequireNonAlphanumeric = false;
+    })
+    .AddEntityFrameworkStores<FinanceDbContext>()
+    .AddSignInManager()
+    .AddDefaultTokenProviders();
+
+builder.Services.ConfigureApplicationCookie(options =>
+{
+    options.LoginPath = "/account/login";
+    options.AccessDeniedPath = "/account/access-denied";
+    options.SlidingExpiration = true;
+});
 
 var app = builder.Build();
 
@@ -29,7 +60,11 @@ if (!app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseAntiforgery();
+
+app.MapAccountEndpoints();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

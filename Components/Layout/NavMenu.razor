@@ -18,7 +18,14 @@
     </NavLink>
 </nav>
 
-<div class="sidebar-note">
-    <span>Учебный проект</span>
-    <small>Blazor Interactive Server<br />Entity Framework Core</small>
-</div>
+<AuthorizeView>
+    <Authorized Context="auth">
+        <div class="user-panel">
+            <span title="@auth.User.Identity?.Name">@auth.User.Identity?.Name</span>
+            <form method="post" action="/account/actions/logout">
+                <AntiforgeryToken />
+                <button type="submit">Выйти</button>
+            </form>
+        </div>
+    </Authorized>
+</AuthorizeView>
