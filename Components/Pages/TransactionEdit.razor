@@ -1,0 +1,170 @@
+@page "/transactions/new"
+@page "/transactions/edit/{Id:int}"
+@rendermode InteractiveServer
+@inject IDbContextFactory<FinanceDbContext> DbFactory
+@inject NavigationManager Navigation
+
+<PageTitle>@(Id.HasValue ? "Редактирование" : "Новая операция") — Мои финансы</PageTitle>
+
+<header class="page-header compact-header">
+    <div>
+        <a class="back-link" href="transactions">← К операциям</a>
+        <h1>@(Id.HasValue ? "Редактировать операцию" : "Новая операция")</h1>
+        <p class="subtitle">Заполните данные о движении средств.</p>
+    </div>
+</header>
+
+@if (isLoading)
+{
+    <div class="loading">Загружаем данные…</div>
+}
+else if (notFound)
+{
+    <div class="empty-state">
+        <h2>Операция не найдена</h2>
+        <a class="button primary" href="transactions">Вернуться к списку</a>
+    </div>
+}
+else
+{
+    <section class="panel form-panel">
+        <EditForm Model="model" OnValidSubmit="SaveAsync" FormName="transaction-form">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div class="type-switch">
+                <button type="button" class="@(selectedType == TransactionType.Expense ? "active expense-option" : "")"
+                        @onclick="() => ChangeType(TransactionType.Expense)">Расход</button>
+                <button type="button" class="@(selectedType == TransactionType.Income ? "active income-option" : "")"
+                        @onclick="() => ChangeType(TransactionType.Income)">Доход</button>
+            </div>
+
+            <div class="form-grid">
+                <label class="full-width">
+                    <span>Описание</span>
+                    <InputText @bind-Value="model.Description" placeholder="Например, покупка продуктов" />
+                    <ValidationMessage For="() => model.Description" />
+                </label>
+
+                <label>
+                    <span>Сумма, ₴</span>
+                    <InputNumber @bind-Value="model.Amount" step="0.01" min="0.01" />
+                    <ValidationMessage For="() => model.Amount" />
+                </label>
+
+                <label>
+                    <span>Дата</span>
+                    <InputDate @bind-Value="model.Date" />
+                    <ValidationMessage For="() => model.Date" />
+                </label>
+
+                <label class="full-width">
+                    <span>Категория</span>
+                    <InputSelect @bind-Value="model.CategoryId">
+                        <option value="0">Выберите категорию</option>
+                        @foreach (var category in VisibleCategories)
+                        {
+                            <option value="@category.Id">@category.Name</option>
+                        }
+                    </InputSelect>
+                    <ValidationMessage For="() => model.CategoryId" />
+                </label>
+
+                <label class="full-width">
+                    <span>Заметка <small>(необязательно)</small></span>
+                    <InputTextArea @bind-Value="model.Note" rows="4" placeholder="Дополнительная информация" />
+                    <ValidationMessage For="() => model.Note" />
+                </label>
+            </div>
+
+            <div class="form-actions">
+                <button class="button primary" type="submit" disabled="@isSaving">
+                    @(isSaving ? "Сохраняем…" : "Сохранить")
+                </button>
+                <a class="button secondary" href="transactions">Отмена</a>
+            </div>
+        </EditForm>
+    </section>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private FinanceTransaction model = new();
+    private List<Category> categories = [];
+    private TransactionType selectedType = TransactionType.Expense;
+    private bool isLoading = true;
+    private bool isSaving;
+    private bool notFound;
+
+    private IEnumerable<Category> VisibleCategories => categories.Where(x => x.Type == selectedType);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        categories = await db.Categories.AsNoTracking().OrderBy(x => x.Name).ToListAsync();
+
+        if (Id.HasValue)
+        {
+            var transaction = await db.Transactions
+                .AsNoTracking()
+                .Include(x => x.Category)
+                .SingleOrDefaultAsync(x => x.Id == Id.Value);
+
+            if (transaction is null)
+            {
+                notFound = true;
+            }
+            else
+            {
+                model = new FinanceTransaction
+                {
+                    Id = transaction.Id,
+                    Description = transaction.Description,
+                    Amount = transaction.Amount,
+                    Date = transaction.Date,
+                    Note = transaction.Note,
+                    CategoryId = transaction.CategoryId
+                };
+                selectedType = transaction.Category!.Type;
+            }
+        }
+        else
+        {
+            model = new FinanceTransaction
+            {
+                Date = DateOnly.FromDateTime(DateTime.Today),
+                CategoryId = categories.FirstOrDefault(x => x.Type == selectedType)?.Id ?? 0
+            };
+        }
+
+        isLoading = false;
+    }
+
+    private void ChangeType(TransactionType type)
+    {
+        selectedType = type;
+        if (!VisibleCategories.Any(x => x.Id == model.CategoryId))
+        {
+            model.CategoryId = VisibleCategories.FirstOrDefault()?.Id ?? 0;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        isSaving = true;
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        if (Id.HasValue)
+        {
+            db.Transactions.Update(model);
+        }
+        else
+        {
+            db.Transactions.Add(model);
+        }
+
+        await db.SaveChangesAsync();
+        Navigation.NavigateTo("transactions");
+    }
+}

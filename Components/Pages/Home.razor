@@ -1,0 +1,169 @@
+@page "/"
+@rendermode InteractiveServer
+@inject IDbContextFactory<FinanceDbContext> DbFactory
+
+<PageTitle>Обзор — Мои финансы</PageTitle>
+
+<header class="page-header">
+    <div>
+        <p class="eyebrow">Финансовая сводка</p>
+        <h1>Обзор за @MonthTitle</h1>
+        <p class="subtitle">Доходы, расходы и последние операции в одном месте.</p>
+    </div>
+    <a class="button primary" href="transactions/new">+ Добавить операцию</a>
+</header>
+
+@if (isLoading)
+{
+    <div class="loading">Загружаем данные…</div>
+}
+else
+{
+    <section class="summary-grid">
+        <article class="summary-card balance">
+            <span>Баланс за месяц</span>
+            <strong>@Money(balance)</strong>
+            <small>Доходы минус расходы</small>
+        </article>
+        <article class="summary-card income">
+            <span>Доходы</span>
+            <strong>+@Money(income)</strong>
+            <small>@incomeCount операций</small>
+        </article>
+        <article class="summary-card expense">
+            <span>Расходы</span>
+            <strong>−@Money(expense)</strong>
+            <small>@expenseCount операций</small>
+        </article>
+    </section>
+
+    <section class="dashboard-grid">
+        <article class="panel">
+            <div class="panel-heading">
+                <div>
+                    <h2>Расходы по категориям</h2>
+                    <p>Структура расходов текущего месяца</p>
+                </div>
+            </div>
+
+            @if (expensesByCategory.Count == 0)
+            {
+                <div class="empty-compact">В этом месяце расходов пока нет.</div>
+            }
+            else
+            {
+                <div class="category-chart">
+                    @foreach (var item in expensesByCategory)
+                    {
+                        <div class="chart-row">
+                            <div class="chart-label">
+                                <span><i style="background: @item.Color"></i>@item.Name</span>
+                                <strong>@Money(item.Amount)</strong>
+                            </div>
+                            <div class="chart-track">
+                                <div class="chart-fill" style="width: @Percent(item.Amount)%; background: @item.Color"></div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </article>
+
+        <article class="panel">
+            <div class="panel-heading">
+                <div>
+                    <h2>Последние операции</h2>
+                    <p>Недавние движения средств</p>
+                </div>
+                <a href="transactions">Все операции</a>
+            </div>
+
+            @if (recentTransactions.Count == 0)
+            {
+                <div class="empty-compact">Добавьте первую операцию.</div>
+            }
+            else
+            {
+                <div class="recent-list">
+                    @foreach (var transaction in recentTransactions)
+                    {
+                        var isIncome = transaction.Category?.Type == TransactionType.Income;
+                        <a class="recent-item" href="transactions/edit/@transaction.Id">
+                            <i style="background: @transaction.Category?.Color"></i>
+                            <div>
+                                <strong>@transaction.Description</strong>
+                                <small>@transaction.Category?.Name · @transaction.Date.ToString("dd MMM")</small>
+                            </div>
+                            <span class="@(isIncome ? "money-in" : "money-out")">
+                                @(isIncome ? "+" : "−")@Money(transaction.Amount)
+                            </span>
+                        </a>
+                    }
+                </div>
+            }
+        </article>
+    </section>
+}
+
+@code {
+    private bool isLoading = true;
+    private decimal income;
+    private decimal expense;
+    private decimal balance;
+    private int incomeCount;
+    private int expenseCount;
+    private List<CategoryTotal> expensesByCategory = [];
+    private List<FinanceTransaction> recentTransactions = [];
+
+    private string MonthTitle => DateTime.Today.ToString("MMMM yyyy");
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var monthStart = new DateOnly(DateTime.Today.Year, DateTime.Today.Month, 1);
+        var nextMonth = monthStart.AddMonths(1);
+
+        var monthTransactions = await db.Transactions
+            .AsNoTracking()
+            .Include(x => x.Category)
+            .Where(x => x.Date >= monthStart && x.Date < nextMonth)
+            .ToListAsync();
+
+        income = monthTransactions
+            .Where(x => x.Category!.Type == TransactionType.Income)
+            .Sum(x => x.Amount);
+        expense = monthTransactions
+            .Where(x => x.Category!.Type == TransactionType.Expense)
+            .Sum(x => x.Amount);
+        incomeCount = monthTransactions.Count(x => x.Category!.Type == TransactionType.Income);
+        expenseCount = monthTransactions.Count(x => x.Category!.Type == TransactionType.Expense);
+        balance = income - expense;
+
+        expensesByCategory = monthTransactions
+            .Where(x => x.Category!.Type == TransactionType.Expense)
+            .GroupBy(x => new { x.Category!.Name, x.Category.Color })
+            .Select(group => new CategoryTotal(group.Key.Name, group.Key.Color, group.Sum(x => x.Amount)))
+            .OrderByDescending(x => x.Amount)
+            .ToList();
+
+        recentTransactions = await db.Transactions
+            .AsNoTracking()
+            .Include(x => x.Category)
+            .OrderByDescending(x => x.Date)
+            .ThenByDescending(x => x.Id)
+            .Take(5)
+            .ToListAsync();
+
+        isLoading = false;
+    }
+
+    private string Money(decimal value) => value.ToString("N2") + " ₴";
+
+    private decimal Percent(decimal value)
+    {
+        var maximum = expensesByCategory.Count == 0 ? 0 : expensesByCategory.Max(x => x.Amount);
+        return maximum == 0 ? 0 : Math.Round(value / maximum * 100, 1);
+    }
+
+    private sealed record CategoryTotal(string Name, string Color, decimal Amount);
+}

@@ -1,0 +1,177 @@
+@page "/transactions"
+@rendermode InteractiveServer
+@inject IDbContextFactory<FinanceDbContext> DbFactory
+
+<PageTitle>Операции — Мои финансы</PageTitle>
+
+<header class="page-header">
+    <div>
+        <p class="eyebrow">Журнал</p>
+        <h1>Операции</h1>
+        <p class="subtitle">История доходов и расходов.</p>
+    </div>
+    <a class="button primary" href="transactions/new">+ Добавить операцию</a>
+</header>
+
+<section class="panel filters">
+    <label>
+        <span>Поиск</span>
+        <input type="search" @bind="search" @bind:event="oninput" placeholder="Описание операции" />
+    </label>
+    <label>
+        <span>Тип</span>
+        <select @bind="typeFilter">
+            <option value="">Все операции</option>
+            <option value="Income">Доходы</option>
+            <option value="Expense">Расходы</option>
+        </select>
+    </label>
+    <label>
+        <span>С даты</span>
+        <input type="date" @bind="fromDate" />
+    </label>
+    <label>
+        <span>По дату</span>
+        <input type="date" @bind="toDate" />
+    </label>
+    <div class="filter-actions">
+        <button class="button primary" @onclick="LoadAsync">Применить</button>
+        <button class="button secondary" @onclick="ResetFiltersAsync">Сбросить</button>
+    </div>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="alert success">@message</div>
+}
+
+<section class="panel table-panel">
+    @if (isLoading)
+    {
+        <div class="loading">Загружаем операции…</div>
+    }
+    else if (transactions.Count == 0)
+    {
+        <div class="empty-state">
+            <h2>Операций не найдено</h2>
+            <p>Измените фильтры или добавьте новую операцию.</p>
+        </div>
+    }
+    else
+    {
+        <div class="table-scroll">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Дата</th>
+                        <th>Описание</th>
+                        <th>Категория</th>
+                        <th class="amount-cell">Сумма</th>
+                        <th><span class="sr-only">Действия</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var transaction in transactions)
+                    {
+                        var isIncome = transaction.Category?.Type == TransactionType.Income;
+                        <tr>
+                            <td>@transaction.Date.ToString("dd.MM.yyyy")</td>
+                            <td>
+                                <strong>@transaction.Description</strong>
+                                @if (!string.IsNullOrWhiteSpace(transaction.Note))
+                                {
+                                    <small class="table-note">@transaction.Note</small>
+                                }
+                            </td>
+                            <td>
+                                <span class="category-pill">
+                                    <i style="background: @transaction.Category?.Color"></i>
+                                    @transaction.Category?.Name
+                                </span>
+                            </td>
+                            <td class="amount-cell @(isIncome ? "money-in" : "money-out")">
+                                @(isIncome ? "+" : "−")@transaction.Amount.ToString("N2") ₴
+                            </td>
+                            <td class="row-actions">
+                                <a class="icon-button" href="transactions/edit/@transaction.Id" title="Редактировать">✎</a>
+                                <button class="icon-button danger" title="Удалить" @onclick="() => DeleteAsync(transaction)">×</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="3">Итого по выборке</td>
+                        <td class="amount-cell @(FilteredBalance >= 0 ? "money-in" : "money-out")">
+                            @FilteredBalance.ToString("N2") ₴
+                        </td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    private List<FinanceTransaction> transactions = [];
+    private bool isLoading = true;
+    private string search = string.Empty;
+    private string typeFilter = string.Empty;
+    private DateTime fromDate = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateTime toDate = DateTime.Today;
+    private string? message;
+
+    private decimal FilteredBalance => transactions.Sum(x =>
+        x.Category?.Type == TransactionType.Income ? x.Amount : -x.Amount);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+        message = null;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var from = DateOnly.FromDateTime(fromDate);
+        var to = DateOnly.FromDateTime(toDate);
+
+        var query = db.Transactions
+            .AsNoTracking()
+            .Include(x => x.Category)
+            .Where(x => x.Date >= from && x.Date <= to);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(x => x.Description.Contains(term));
+        }
+
+        if (Enum.TryParse<TransactionType>(typeFilter, out var parsedType))
+        {
+            query = query.Where(x => x.Category!.Type == parsedType);
+        }
+
+        transactions = await query
+            .OrderByDescending(x => x.Date)
+            .ThenByDescending(x => x.Id)
+            .ToListAsync();
+        isLoading = false;
+    }
+
+    private async Task ResetFiltersAsync()
+    {
+        search = string.Empty;
+        typeFilter = string.Empty;
+        fromDate = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        toDate = DateTime.Today;
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync(FinanceTransaction transaction)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        await db.Transactions.Where(x => x.Id == transaction.Id).ExecuteDeleteAsync();
+        await LoadAsync();
+        message = $"Операция «{transaction.Description}» удалена.";
+    }
+}

@@ -1,0 +1,214 @@
+@page "/categories"
+@rendermode InteractiveServer
+@inject IDbContextFactory<FinanceDbContext> DbFactory
+
+<PageTitle>Категории — Мои финансы</PageTitle>
+
+<header class="page-header">
+    <div>
+        <p class="eyebrow">Справочник</p>
+        <h1>Категории</h1>
+        <p class="subtitle">Настройте категории доходов и расходов.</p>
+    </div>
+</header>
+
+<div class="categories-layout">
+    <section class="panel">
+        <div class="panel-heading">
+            <div>
+                <h2>Доходы</h2>
+                <p>Источники поступлений</p>
+            </div>
+        </div>
+        @CategoryList(IncomeCategories)
+    </section>
+
+    <section class="panel">
+        <div class="panel-heading">
+            <div>
+                <h2>Расходы</h2>
+                <p>Направления трат</p>
+            </div>
+        </div>
+        @CategoryList(ExpenseCategories)
+    </section>
+
+    <section class="panel category-form-panel">
+        <div class="panel-heading">
+            <div>
+                <h2>@(model.Id == 0 ? "Новая категория" : "Редактирование")</h2>
+                <p>Название, тип и цвет метки</p>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert error">@error</div>
+        }
+
+        <EditForm Model="model" OnValidSubmit="SaveAsync" FormName="category-form">
+            <DataAnnotationsValidator />
+            <div class="stacked-form">
+                <label>
+                    <span>Название</span>
+                    <InputText @bind-Value="model.Name" placeholder="Например, Здоровье" />
+                    <ValidationMessage For="() => model.Name" />
+                </label>
+                <label>
+                    <span>Тип</span>
+                    <InputSelect @bind-Value="model.Type">
+                        <option value="@TransactionType.Expense">Расход</option>
+                        <option value="@TransactionType.Income">Доход</option>
+                    </InputSelect>
+                </label>
+                <label>
+                    <span>Цвет</span>
+                    <div class="color-input">
+                        <input type="color" @bind="model.Color" />
+                        <InputText @bind-Value="model.Color" />
+                    </div>
+                    <ValidationMessage For="() => model.Color" />
+                </label>
+            </div>
+            <div class="form-actions">
+                <button class="button primary" type="submit">Сохранить</button>
+                @if (model.Id != 0)
+                {
+                    <button class="button secondary" type="button" @onclick="ResetForm">Отмена</button>
+                }
+            </div>
+        </EditForm>
+    </section>
+</div>
+
+@code {
+    private List<Category> categories = [];
+    private Dictionary<int, int> usageCounts = [];
+    private Category model = NewCategory();
+    private string? error;
+
+    private IEnumerable<Category> IncomeCategories => categories.Where(x => x.Type == TransactionType.Income);
+    private IEnumerable<Category> ExpenseCategories => categories.Where(x => x.Type == TransactionType.Expense);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        categories = await db.Categories.AsNoTracking()
+            .OrderBy(x => x.Name)
+            .ToListAsync();
+        usageCounts = await db.Transactions.AsNoTracking()
+            .GroupBy(x => x.CategoryId)
+            .ToDictionaryAsync(x => x.Key, x => x.Count());
+    }
+
+    private RenderFragment CategoryList(IEnumerable<Category> items) => builder =>
+    {
+        var sequence = 0;
+        foreach (var category in items)
+        {
+            var count = usageCounts.GetValueOrDefault(category.Id);
+            builder.OpenElement(sequence++, "div");
+            builder.AddAttribute(sequence++, "class", "category-row");
+            builder.OpenElement(sequence++, "i");
+            builder.AddAttribute(sequence++, "style", $"background: {category.Color}");
+            builder.CloseElement();
+            builder.OpenElement(sequence++, "div");
+            builder.OpenElement(sequence++, "strong");
+            builder.AddContent(sequence++, category.Name);
+            builder.CloseElement();
+            builder.OpenElement(sequence++, "small");
+            builder.AddContent(sequence++, $"{count} операций");
+            builder.CloseElement();
+            builder.CloseElement();
+            builder.OpenElement(sequence++, "div");
+            builder.AddAttribute(sequence++, "class", "row-actions");
+            builder.OpenElement(sequence++, "button");
+            builder.AddAttribute(sequence++, "class", "icon-button");
+            builder.AddAttribute(sequence++, "title", "Редактировать");
+            builder.AddAttribute(sequence++, "onclick", EventCallback.Factory.Create(this, () => Edit(category)));
+            builder.AddContent(sequence++, "✎");
+            builder.CloseElement();
+            builder.OpenElement(sequence++, "button");
+            builder.AddAttribute(sequence++, "class", "icon-button danger");
+            builder.AddAttribute(sequence++, "title", count > 0 ? "Категория используется" : "Удалить");
+            builder.AddAttribute(sequence++, "disabled", count > 0);
+            builder.AddAttribute(sequence++, "onclick", EventCallback.Factory.Create(this, () => DeleteAsync(category)));
+            builder.AddContent(sequence++, "×");
+            builder.CloseElement();
+            builder.CloseElement();
+            builder.CloseElement();
+        }
+    };
+
+    private void Edit(Category category)
+    {
+        error = null;
+        model = new Category
+        {
+            Id = category.Id,
+            Name = category.Name,
+            Color = category.Color,
+            Type = category.Type
+        };
+    }
+
+    private async Task SaveAsync()
+    {
+        error = null;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var normalizedName = model.Name.Trim();
+        var duplicate = await db.Categories.AnyAsync(x =>
+            x.Id != model.Id && x.Name == normalizedName && x.Type == model.Type);
+
+        if (duplicate)
+        {
+            error = "Категория с таким названием и типом уже существует.";
+            return;
+        }
+
+        model.Name = normalizedName;
+        if (model.Id == 0)
+        {
+            db.Categories.Add(model);
+        }
+        else
+        {
+            db.Categories.Update(model);
+        }
+
+        await db.SaveChangesAsync();
+        ResetForm();
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync(Category category)
+    {
+        if (usageCounts.GetValueOrDefault(category.Id) > 0)
+        {
+            error = "Нельзя удалить категорию, которая используется в операциях.";
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        await db.Categories.Where(x => x.Id == category.Id).ExecuteDeleteAsync();
+        if (model.Id == category.Id)
+        {
+            ResetForm();
+        }
+        await LoadAsync();
+    }
+
+    private void ResetForm()
+    {
+        model = NewCategory();
+        error = null;
+    }
+
+    private static Category NewCategory() => new()
+    {
+        Type = TransactionType.Expense,
+        Color = "#64748b"
+    };
+}

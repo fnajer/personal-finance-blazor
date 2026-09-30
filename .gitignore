@@ -1,0 +1,12 @@
+bin/
+obj/
+.vs/
+.vscode/
+*.user
+*.suo
+finance.db
+finance.db-shm
+finance.db-wal
+.dotnet-home/
+.nuget-packages/
+.appdata/
