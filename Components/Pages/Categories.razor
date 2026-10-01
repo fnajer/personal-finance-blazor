@@ -190,6 +190,13 @@
                 return;
             }
 
+            if (model.Type == TransactionType.Income && category.Type == TransactionType.Expense &&
+                await db.MonthlyBudgets.AnyAsync(x => x.CategoryId == category.Id && x.UserId == userId))
+            {
+                error = "Сначала удалите бюджеты этой категории, затем измените её тип.";
+                return;
+            }
+
             category.Name = model.Name;
             category.Color = model.Color;
             category.Type = model.Type;

@@ -1,0 +1,277 @@
+@page "/budgets"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IDbContextFactory<FinanceDbContext> DbFactory
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Бюджеты — Мои финансы</PageTitle>
+
+<header class="page-header">
+    <div>
+        <p class="eyebrow">Контроль расходов</p>
+        <h1>Месячные бюджеты</h1>
+        <p class="subtitle">Установите лимиты для категорий и следите за расходами.</p>
+    </div>
+    <div class="month-switcher">
+        <button class="icon-button" type="button" title="Предыдущий месяц" @onclick="() => MoveMonthAsync(-1)">←</button>
+        <input type="month" value="@SelectedMonthValue" @onchange="ChangeMonthAsync" aria-label="Месяц бюджета" />
+        <button class="icon-button" type="button" title="Следующий месяц" @onclick="() => MoveMonthAsync(1)">→</button>
+    </div>
+</header>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="alert success">@message</div>
+}
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="alert error standalone-alert">@error</div>
+}
+
+@if (isLoading)
+{
+    <div class="loading">Загружаем бюджеты…</div>
+}
+else
+{
+    <div class="budgets-layout">
+        <section class="panel">
+            <div class="panel-heading">
+                <div>
+                    <h2>@selectedMonth.ToString("MMMM yyyy")</h2>
+                    <p>@BudgetSummary</p>
+                </div>
+            </div>
+
+            @if (budgetRows.Count == 0)
+            {
+                <div class="empty-compact">На этот месяц лимиты ещё не заданы.</div>
+            }
+            else
+            {
+                <div class="budget-list">
+                    @foreach (var row in budgetRows)
+                    {
+                        <div class="budget-row @(row.IsExceeded ? "exceeded" : row.IsNearLimit ? "near-limit" : "")">
+                            <div class="budget-row-heading">
+                                <span class="category-pill"><i style="background: @row.Color"></i>@row.CategoryName</span>
+                                <strong>@Money(row.Spent) из @Money(row.Limit)</strong>
+                            </div>
+                            <div class="budget-track"><div class="budget-fill" style="width: @row.ProgressWidth%; background: @row.BarColor"></div></div>
+                            <div class="budget-row-footer">
+                                <span>@row.StatusText</span>
+                                <div class="row-actions">
+                                    <button class="icon-button" title="Изменить" @onclick="() => Edit(row)">✎</button>
+                                    <button class="icon-button danger" title="Удалить лимит" @onclick="() => DeleteAsync(row)">×</button>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="panel budget-form-panel">
+            <div class="panel-heading">
+                <div>
+                    <h2>@(editingBudgetId == 0 ? "Новый лимит" : "Изменить лимит")</h2>
+                    <p>Для @selectedMonth.ToString("MMMM yyyy")</p>
+                </div>
+            </div>
+            <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="budget-form">
+                <DataAnnotationsValidator />
+                <div class="stacked-form">
+                    <label>
+                        <span>Категория расходов</span>
+                        <InputSelect @bind-Value="form.CategoryId" disabled="@(editingBudgetId != 0)">
+                            <option value="0">Выберите категорию</option>
+                            @foreach (var category in AvailableCategories)
+                            {
+                                <option value="@category.Id">@category.Name</option>
+                            }
+                        </InputSelect>
+                        <ValidationMessage For="() => form.CategoryId" />
+                    </label>
+                    <label>
+                        <span>Лимит, ₴</span>
+                        <InputNumber @bind-Value="form.Limit" min="0.01" step="0.01" />
+                        <ValidationMessage For="() => form.Limit" />
+                    </label>
+                </div>
+                <div class="form-actions">
+                    <button class="button primary" type="submit">Сохранить</button>
+                    @if (editingBudgetId != 0)
+                    {
+                        <button class="button secondary" type="button" @onclick="() => ResetForm()">Отмена</button>
+                    }
+                </div>
+            </EditForm>
+        </section>
+    </div>
+}
+
+@code {
+    private DateOnly selectedMonth = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private List<Category> expenseCategories = [];
+    private List<BudgetRow> budgetRows = [];
+    private BudgetForm form = new();
+    private int editingBudgetId;
+    private bool isLoading = true;
+    private string? message;
+    private string? error;
+
+    private string SelectedMonthValue => selectedMonth.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+    private IEnumerable<Category> AvailableCategories => expenseCategories.Where(x =>
+        x.Id == form.CategoryId || budgetRows.All(row => row.CategoryId != x.Id));
+    private string BudgetSummary => $"Запланировано {Money(budgetRows.Sum(x => x.Limit))} · потрачено {Money(budgetRows.Sum(x => x.Spent))}";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+        var userId = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetRequiredUserId();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var nextMonth = selectedMonth.AddMonths(1);
+
+        expenseCategories = await db.Categories.AsNoTracking()
+            .Where(x => x.UserId == userId && x.Type == TransactionType.Expense)
+            .OrderBy(x => x.Name)
+            .ToListAsync();
+
+        var budgets = await db.MonthlyBudgets.AsNoTracking()
+            .Include(x => x.Category)
+            .Where(x => x.UserId == userId && x.Month == selectedMonth)
+            .OrderBy(x => x.Category!.Name)
+            .ToListAsync();
+        var monthExpenses = await db.Transactions.AsNoTracking()
+            .Where(x => x.UserId == userId && x.Date >= selectedMonth && x.Date < nextMonth)
+            .Select(x => new { x.CategoryId, x.Amount })
+            .ToListAsync();
+        var spentByCategory = monthExpenses
+            .GroupBy(x => x.CategoryId)
+            .ToDictionary(x => x.Key, x => x.Sum(t => t.Amount));
+
+        budgetRows = budgets.Select(x => new BudgetRow(
+            x.Id, x.CategoryId, x.Category!.Name, x.Category.Color, x.Limit,
+            spentByCategory.GetValueOrDefault(x.CategoryId))).ToList();
+        isLoading = false;
+    }
+
+    private async Task ChangeMonthAsync(ChangeEventArgs args)
+    {
+        if (DateOnly.TryParseExact($"{args.Value}-01", "yyyy-MM-dd", CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out var month))
+        {
+            selectedMonth = month;
+            ResetForm();
+            await LoadAsync();
+        }
+    }
+
+    private async Task MoveMonthAsync(int offset)
+    {
+        selectedMonth = selectedMonth.AddMonths(offset);
+        ResetForm();
+        await LoadAsync();
+    }
+
+    private void Edit(BudgetRow row)
+    {
+        editingBudgetId = row.Id;
+        form = new BudgetForm { CategoryId = row.CategoryId, Limit = row.Limit };
+        error = null;
+        message = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        error = null;
+        message = null;
+        var userId = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetRequiredUserId();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var categoryIsValid = await db.Categories.AnyAsync(x =>
+            x.Id == form.CategoryId && x.UserId == userId && x.Type == TransactionType.Expense);
+        if (!categoryIsValid)
+        {
+            error = "Выберите доступную категорию расходов.";
+            return;
+        }
+
+        if (editingBudgetId == 0)
+        {
+            var exists = await db.MonthlyBudgets.AnyAsync(x => x.UserId == userId &&
+                x.CategoryId == form.CategoryId && x.Month == selectedMonth);
+            if (exists)
+            {
+                error = "Для этой категории уже задан лимит на выбранный месяц.";
+                return;
+            }
+            db.MonthlyBudgets.Add(new MonthlyBudget
+            {
+                CategoryId = form.CategoryId,
+                Limit = form.Limit,
+                Month = selectedMonth,
+                UserId = userId
+            });
+        }
+        else
+        {
+            var budget = await db.MonthlyBudgets.SingleOrDefaultAsync(x =>
+                x.Id == editingBudgetId && x.UserId == userId);
+            if (budget is null)
+            {
+                error = "Бюджет не найден.";
+                return;
+            }
+            budget.Limit = form.Limit;
+        }
+
+        await db.SaveChangesAsync();
+        message = "Лимит сохранён.";
+        ResetForm(clearMessages: false);
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync(BudgetRow row)
+    {
+        var userId = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetRequiredUserId();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        await db.MonthlyBudgets.Where(x => x.Id == row.Id && x.UserId == userId).ExecuteDeleteAsync();
+        if (editingBudgetId == row.Id) ResetForm();
+        message = $"Лимит для «{row.CategoryName}» удалён.";
+        await LoadAsync();
+    }
+
+    private void ResetForm(bool clearMessages = true)
+    {
+        editingBudgetId = 0;
+        form = new BudgetForm();
+        error = null;
+        if (clearMessages) message = null;
+    }
+
+    private static string Money(decimal value) => value.ToString("N2") + " ₴";
+
+    private sealed class BudgetForm
+    {
+        [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue, ErrorMessage = "Выберите категорию расходов.")]
+        public int CategoryId { get; set; }
+
+        [System.ComponentModel.DataAnnotations.Range(typeof(decimal), "0.01", "999999999", ParseLimitsInInvariantCulture = true,
+            ErrorMessage = "Лимит должен быть больше нуля.")]
+        public decimal Limit { get; set; }
+    }
+
+    private sealed record BudgetRow(int Id, int CategoryId, string CategoryName, string Color, decimal Limit, decimal Spent)
+    {
+        public decimal Percent => Limit == 0 ? 0 : Math.Round(Spent / Limit * 100, 0);
+        public decimal ProgressWidth => Math.Min(Percent, 100);
+        public bool IsExceeded => Spent > Limit;
+        public bool IsNearLimit => !IsExceeded && Percent >= 80;
+        public string BarColor => IsExceeded ? "#c43d3d" : IsNearLimit ? "#d78b19" : Color;
+        public string StatusText => IsExceeded
+            ? $"Лимит превышен на {Money(Spent - Limit)}"
+            : $"Осталось {Money(Limit - Spent)} · {Percent}% использовано";
+    }
+}

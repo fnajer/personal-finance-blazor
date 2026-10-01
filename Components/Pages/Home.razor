@@ -39,6 +39,32 @@ else
         </article>
     </section>
 
+    @if (budgetStatuses.Count > 0)
+    {
+        <section class="panel budget-overview">
+            <div class="panel-heading">
+                <div>
+                    <h2>Бюджеты месяца</h2>
+                    <p>@BudgetOverviewText</p>
+                </div>
+                <a href="budgets">Настроить лимиты</a>
+            </div>
+            <div class="budget-overview-grid">
+                @foreach (var budget in budgetStatuses)
+                {
+                    <div class="budget-mini-card @(budget.IsExceeded ? "exceeded" : budget.IsNearLimit ? "near-limit" : "")">
+                        <div class="budget-row-heading">
+                            <span><i style="background: @budget.Color"></i>@budget.CategoryName</span>
+                            <strong>@budget.Percent%</strong>
+                        </div>
+                        <div class="budget-track"><div class="budget-fill" style="width: @budget.ProgressWidth%; background: @budget.BarColor"></div></div>
+                        <small>@budget.StatusText</small>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+
     <section class="dashboard-grid">
         <article class="panel">
             <div class="panel-heading">
@@ -116,8 +142,20 @@ else
     private int expenseCount;
     private List<CategoryTotal> expensesByCategory = [];
     private List<FinanceTransaction> recentTransactions = [];
+    private List<BudgetStatus> budgetStatuses = [];
 
     private string MonthTitle => DateTime.Today.ToString("MMMM yyyy");
+    private string BudgetOverviewText
+    {
+        get
+        {
+            var exceeded = budgetStatuses.Count(x => x.IsExceeded);
+            var near = budgetStatuses.Count(x => x.IsNearLimit);
+            if (exceeded > 0) return $"Превышено лимитов: {exceeded}";
+            if (near > 0) return $"Близко к лимиту: {near}";
+            return "Расходы укладываются в заданные лимиты";
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -149,6 +187,20 @@ else
             .OrderByDescending(x => x.Amount)
             .ToList();
 
+        var budgets = await db.MonthlyBudgets
+            .AsNoTracking()
+            .Include(x => x.Category)
+            .Where(x => x.UserId == userId && x.Month == monthStart)
+            .OrderBy(x => x.Category!.Name)
+            .ToListAsync();
+        var spentByCategory = monthTransactions
+            .Where(x => x.Category!.Type == TransactionType.Expense)
+            .GroupBy(x => x.CategoryId)
+            .ToDictionary(x => x.Key, x => x.Sum(t => t.Amount));
+        budgetStatuses = budgets.Select(x => new BudgetStatus(
+            x.Category!.Name, x.Category.Color, x.Limit,
+            spentByCategory.GetValueOrDefault(x.CategoryId))).ToList();
+
         recentTransactions = await db.Transactions
             .AsNoTracking()
             .Include(x => x.Category)
@@ -161,7 +213,7 @@ else
         isLoading = false;
     }
 
-    private string Money(decimal value) => value.ToString("N2") + " ₴";
+    private static string Money(decimal value) => value.ToString("N2") + " ₴";
 
     private decimal Percent(decimal value)
     {
@@ -170,4 +222,16 @@ else
     }
 
     private sealed record CategoryTotal(string Name, string Color, decimal Amount);
+
+    private sealed record BudgetStatus(string CategoryName, string Color, decimal Limit, decimal Spent)
+    {
+        public decimal Percent => Limit == 0 ? 0 : Math.Round(Spent / Limit * 100, 0);
+        public decimal ProgressWidth => Math.Min(Percent, 100);
+        public bool IsExceeded => Spent > Limit;
+        public bool IsNearLimit => !IsExceeded && Percent >= 80;
+        public string BarColor => IsExceeded ? "#c43d3d" : IsNearLimit ? "#d78b19" : Color;
+        public string StatusText => IsExceeded
+            ? $"Превышение на {Money(Spent - Limit)}"
+            : $"{Money(Spent)} из {Money(Limit)}";
+    }
 }

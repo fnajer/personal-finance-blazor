@@ -131,6 +131,14 @@ button { cursor: pointer; }
 .summary-card.expense strong, .money-out { color: #cf4545 !important; }
 
 .dashboard-grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 22px; }
+.budget-overview { margin-bottom: 22px; }
+.budget-overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; padding: 18px 20px 21px; }
+.budget-mini-card { padding: 14px; border: 1px solid #e3ebe5; border-radius: 11px; background: #fbfcfb; }
+.budget-mini-card.near-limit { border-color: #edcf9c; background: #fffaf0; }
+.budget-mini-card.exceeded { border-color: #edc1c1; background: #fff5f5; }
+.budget-mini-card small { display: block; margin-top: 8px; color: var(--muted); font-size: 10px; }
+.budget-mini-card.near-limit small { color: #9a610c; font-weight: 700; }
+.budget-mini-card.exceeded small { color: var(--danger); font-weight: 700; }
 .panel { border: 1px solid var(--border); border-radius: 16px; background: var(--panel); }
 .panel-heading { display: flex; justify-content: space-between; align-items: center; gap: 15px; padding: 21px 23px 17px; border-bottom: 1px solid #edf1ee; }
 .panel-heading h2 { margin: 0 0 4px; font-size: 16px; }
@@ -208,6 +216,25 @@ tfoot td { color: #314238; background: #f8faf8; font-weight: 800; }
 .color-input { display: grid; grid-template-columns: 52px 1fr; gap: 8px; }
 .color-input input[type="color"] { padding: 4px; }
 
+.month-switcher { display: flex; align-items: center; gap: 7px; padding: 5px; border: 1px solid var(--border); border-radius: 11px; background: white; }
+.month-switcher input { width: 145px; min-height: 34px; border: 0; }
+.budgets-layout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(270px, .6fr); align-items: start; gap: 20px; }
+.budget-list { padding: 4px 20px 8px; }
+.budget-row { padding: 17px 3px; border-bottom: 1px solid #edf1ee; }
+.budget-row:last-child { border-bottom: 0; }
+.budget-row-heading, .budget-row-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.budget-row-heading { margin-bottom: 10px; font-size: 12px; }
+.budget-row-heading > span { display: flex; align-items: center; gap: 7px; }
+.budget-row-heading > span i { width: 8px; height: 8px; border-radius: 50%; }
+.budget-row-heading strong { white-space: nowrap; }
+.budget-track { overflow: hidden; height: 7px; border-radius: 20px; background: #edf2ee; }
+.budget-fill { height: 100%; min-width: 3px; border-radius: inherit; transition: width .2s ease; }
+.budget-row-footer { min-height: 32px; margin-top: 5px; color: var(--muted); font-size: 10px; }
+.budget-row.near-limit .budget-row-footer > span { color: #9a610c; font-weight: 700; }
+.budget-row.exceeded .budget-row-footer > span { color: var(--danger); font-weight: 700; }
+.budget-form-panel form { padding: 20px; }
+.standalone-alert.alert.error { margin: 0 0 15px; }
+
 .alert { margin-bottom: 15px; padding: 11px 14px; border-radius: 9px; font-size: 12px; }
 .alert.success { color: #145c3a; border: 1px solid #b9dec8; background: #eaf7ef; }
 .alert.error { margin: 15px 20px 0; color: #963636; border: 1px solid #edc1c1; background: #fff0f0; }
@@ -226,7 +253,7 @@ tfoot td { color: #314238; background: #f8faf8; font-weight: 800; }
     .main-content { padding: 38px 30px 65px; }
     .summary-grid { grid-template-columns: 1fr 1fr; }
     .summary-card.balance { grid-column: 1 / -1; }
-    .dashboard-grid, .categories-layout { grid-template-columns: 1fr; }
+    .dashboard-grid, .categories-layout, .budgets-layout { grid-template-columns: 1fr; }
     .filters { grid-template-columns: 1fr 1fr; }
 }
 
@@ -234,7 +261,7 @@ tfoot td { color: #314238; background: #f8faf8; font-weight: 800; }
     .app-shell { display: block; }
     .sidebar { position: static; width: 100%; height: auto; padding: 14px; }
     .brand { padding: 3px 5px 15px; }
-    .nav-links { grid-template-columns: repeat(3, 1fr); }
+    .nav-links { grid-template-columns: repeat(4, 1fr); }
     .nav-links a { justify-content: center; padding: 10px 5px; font-size: 11px; }
     .nav-links a span { display: none; }
     .user-panel { margin-top: 13px; }

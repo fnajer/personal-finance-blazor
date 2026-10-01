@@ -19,4 +19,6 @@ public class Category
     public string? UserId { get; set; }
 
     public List<FinanceTransaction> Transactions { get; set; } = [];
+
+    public List<MonthlyBudget> Budgets { get; set; } = [];
 }
