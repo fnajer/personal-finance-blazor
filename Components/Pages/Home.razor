@@ -65,6 +65,36 @@ else
         </section>
     }
 
+    <section class="panel monthly-expenses-panel">
+        <div class="panel-heading">
+            <div>
+                <h2>Расходы по месяцам</h2>
+                <p>Динамика расходов за последние 6 месяцев</p>
+            </div>
+            <strong class="monthly-expenses-total">@Money(monthlyExpenses.Sum(x => x.Amount))</strong>
+        </div>
+
+        @if (monthlyExpenses.All(x => x.Amount == 0))
+        {
+            <div class="empty-compact">За последние 6 месяцев расходов пока нет.</div>
+        }
+        else
+        {
+            <div class="monthly-chart" role="img" aria-label="Диаграмма расходов по месяцам за последние 6 месяцев">
+                @foreach (var month in monthlyExpenses)
+                {
+                    <div class="monthly-chart-column" title="@month.FullLabel: @Money(month.Amount)">
+                        <strong>@MoneyCompact(month.Amount)</strong>
+                        <div class="monthly-chart-track">
+                            <div class="monthly-chart-bar" style="height: @MonthlyBarHeight(month.Amount)%"></div>
+                        </div>
+                        <span>@month.Label</span>
+                    </div>
+                }
+            </div>
+        }
+    </section>
+
     <section class="dashboard-grid">
         <article class="panel">
             <div class="panel-heading">
@@ -143,6 +173,7 @@ else
     private List<CategoryTotal> expensesByCategory = [];
     private List<FinanceTransaction> recentTransactions = [];
     private List<BudgetStatus> budgetStatuses = [];
+    private List<MonthlyExpense> monthlyExpenses = [];
 
     private string MonthTitle => DateTime.Today.ToString("MMMM yyyy");
     private string BudgetOverviewText
@@ -201,6 +232,22 @@ else
             x.Category!.Name, x.Category.Color, x.Limit,
             spentByCategory.GetValueOrDefault(x.CategoryId))).ToList();
 
+        var firstChartMonth = monthStart.AddMonths(-5);
+        var chartTransactions = await db.Transactions
+            .AsNoTracking()
+            .Where(x => x.UserId == userId &&
+                        x.Category!.Type == TransactionType.Expense &&
+                        x.Date >= firstChartMonth && x.Date < nextMonth)
+            .Select(x => new { x.Date, x.Amount })
+            .ToListAsync();
+        var monthlyTotals = chartTransactions
+            .GroupBy(x => new DateOnly(x.Date.Year, x.Date.Month, 1))
+            .ToDictionary(x => x.Key, x => x.Sum(t => t.Amount));
+        monthlyExpenses = Enumerable.Range(0, 6)
+            .Select(offset => firstChartMonth.AddMonths(offset))
+            .Select(month => new MonthlyExpense(month, monthlyTotals.GetValueOrDefault(month)))
+            .ToList();
+
         recentTransactions = await db.Transactions
             .AsNoTracking()
             .Include(x => x.Category)
@@ -215,6 +262,19 @@ else
 
     private static string Money(decimal value) => value.ToString("N2") + " ₴";
 
+    private static string MoneyCompact(decimal value) => value switch
+    {
+        >= 1_000_000 => $"{value / 1_000_000:0.#} млн ₴",
+        >= 1_000 => $"{value / 1_000:0.#} тыс. ₴",
+        _ => $"{value:0} ₴"
+    };
+
+    private int MonthlyBarHeight(decimal value)
+    {
+        var maximum = monthlyExpenses.Count == 0 ? 0 : monthlyExpenses.Max(x => x.Amount);
+        return maximum == 0 || value == 0 ? 0 : Math.Max(4, (int)Math.Round(value / maximum * 100));
+    }
+
     private decimal Percent(decimal value)
     {
         var maximum = expensesByCategory.Count == 0 ? 0 : expensesByCategory.Max(x => x.Amount);
@@ -222,6 +282,12 @@ else
     }
 
     private sealed record CategoryTotal(string Name, string Color, decimal Amount);
+
+    private sealed record MonthlyExpense(DateOnly Month, decimal Amount)
+    {
+        public string Label => Month.ToString("MMM");
+        public string FullLabel => Month.ToString("MMMM yyyy");
+    }
 
     private sealed record BudgetStatus(string CategoryName, string Color, decimal Limit, decimal Spent)
     {
