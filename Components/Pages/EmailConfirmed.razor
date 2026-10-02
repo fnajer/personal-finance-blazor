@@ -1,0 +1,22 @@
+@page "/account/email-confirmed"
+@layout AccountLayout
+
+<PageTitle>Подтверждение email — Мои финансы</PageTitle>
+
+<section class="account-card account-result">
+    <div class="account-result-icon">@(Success ? "✓" : "!")</div>
+    <p class="eyebrow">Подтверждение email</p>
+    <h1>@(Success ? "Email подтверждён" : "Ссылка не сработала")</h1>
+    <p class="subtitle">
+        @(Success
+            ? "Теперь вы можете войти в аккаунт."
+            : "Ссылка недействительна, устарела или уже была использована. Запросите новое письмо.")
+    </p>
+    <a class="button primary" href="@(Success ? "/account/login" : "/account/resend-confirmation")">
+        @(Success ? "Войти" : "Отправить новое письмо")
+    </a>
+</section>
+
+@code {
+    [SupplyParameterFromQuery(Name = "success")] public bool Success { get; set; }
+}

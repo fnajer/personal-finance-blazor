@@ -24,6 +24,7 @@
             <span>Пароль</span>
             <input type="password" name="password" autocomplete="current-password" required />
         </label>
+        <a class="account-form-link" href="/account/forgot-password">Забыли пароль?</a>
         <label class="checkbox-label">
             <input type="checkbox" name="rememberMe" value="true" />
             <span>Оставаться в системе</span>
@@ -32,6 +33,7 @@
     </form>
 
     <p class="account-switch">Нет аккаунта? <a href="/account/register">Зарегистрироваться</a></p>
+    <p class="account-switch account-switch-secondary"><a href="/account/resend-confirmation">Отправить подтверждение повторно</a></p>
 </section>
 
 @code {

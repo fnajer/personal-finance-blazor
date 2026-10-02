@@ -1,0 +1,17 @@
+@page "/account/register-confirmation"
+@layout AccountLayout
+
+<PageTitle>Проверьте почту — Мои финансы</PageTitle>
+
+<section class="account-card account-result">
+    <div class="account-result-icon">✉</div>
+    <p class="eyebrow">Почти готово</p>
+    <h1>Проверьте почту</h1>
+    <p class="subtitle">Если для адреса <strong>@Email</strong> ожидается подтверждение, мы отправили на него письмо. Перейдите по ссылке из письма, чтобы войти.</p>
+    <a class="button primary" href="/account/login">Перейти ко входу</a>
+    <p class="account-switch"><a href="/account/resend-confirmation?email=@Uri.EscapeDataString(Email ?? string.Empty)">Не пришло письмо?</a></p>
+</section>
+
+@code {
+    [SupplyParameterFromQuery(Name = "email")] public string? Email { get; set; }
+}

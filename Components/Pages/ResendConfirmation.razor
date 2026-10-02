@@ -1,0 +1,25 @@
+@page "/account/resend-confirmation"
+@layout AccountLayout
+
+<PageTitle>Повторное подтверждение — Мои финансы</PageTitle>
+
+<section class="account-card">
+    <p class="eyebrow">Подтверждение email</p>
+    <h1>Отправить письмо ещё раз</h1>
+    <p class="subtitle">Укажите адрес регистрации. В целях безопасности результат будет одинаковым для любого адреса.</p>
+
+    <form class="stacked-form account-form" method="post" action="/account/actions/resend-confirmation">
+        <AntiforgeryToken />
+        <label>
+            <span>Email</span>
+            <input type="email" name="email" value="@Email" autocomplete="email" required autofocus />
+        </label>
+        <button class="button primary" type="submit">Отправить письмо</button>
+    </form>
+
+    <p class="account-switch"><a href="/account/login">Вернуться ко входу</a></p>
+</section>
+
+@code {
+    [SupplyParameterFromQuery(Name = "email")] public string? Email { get; set; }
+}
