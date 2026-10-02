@@ -65,6 +65,7 @@ app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapAccountEndpoints();
+app.MapTransactionExportEndpoints();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
